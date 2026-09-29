@@ -86,6 +86,10 @@ using System.Text;
 public interface IDiagnosticShellItemImageFactory {
     [PreserveSig] int GetImage(DiagnosticThumbSize size, int flags, out IntPtr bitmap);
 }
+[ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IDiagnosticShellItem {
+    [PreserveSig] int BindToHandler(IntPtr bindContext, ref Guid handler, ref Guid iid, out IntPtr result);
+}
 [ComImport, Guid("b824b49d-22ac-4161-ac8a-9916e8fa3f7f"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IDiagnosticInitializeWithStream {
     [PreserveSig] int Initialize(IStream stream, uint mode);
@@ -101,6 +105,9 @@ public static class DiagnosticShellThumbnail {
     [DllImport("shell32.dll", CharSet=CharSet.Unicode, PreserveSig=false)]
     static extern void SHCreateItemFromParsingName(string path, IntPtr bind, ref Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out IDiagnosticShellItemImageFactory factory);
+    [DllImport("shell32.dll", EntryPoint="SHCreateItemFromParsingName", CharSet=CharSet.Unicode, PreserveSig=false)]
+    static extern void CreateShellItem(string path, IntPtr bind, ref Guid iid,
+        [MarshalAs(UnmanagedType.Interface)] out IDiagnosticShellItem item);
     [DllImport("shlwapi.dll", CharSet=CharSet.Unicode, PreserveSig=false)]
     static extern void SHCreateStreamOnFileW(string path, uint mode, out IStream stream);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr bitmap);
@@ -142,6 +149,39 @@ public static class DiagnosticShellThumbnail {
             if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
             if (stream != null) Marshal.ReleaseComObject(stream);
             if (instance != null) Marshal.ReleaseComObject(instance);
+        }
+    }
+
+    public static bool CheckInProcessShellBinding(string path, int size) {
+        var timer = Stopwatch.StartNew();
+        IDiagnosticShellItem item = null;
+        object provider = null;
+        IntPtr pointer = IntPtr.Zero;
+        IntPtr bitmap = IntPtr.Zero;
+        try {
+            var itemId = typeof(IDiagnosticShellItem).GUID;
+            CreateShellItem(path, IntPtr.Zero, ref itemId, out item);
+            var handlerId = new Guid("7b2e650a-8e20-4f4a-b09e-6597afc72fb0"); // BHID_ThumbnailHandler
+            var providerId = typeof(IDiagnosticThumbnailProvider).GUID;
+            int hr = item.BindToHandler(IntPtr.Zero, ref handlerId, ref providerId, out pointer);
+            if (hr >= 0) {
+                provider = Marshal.GetObjectForIUnknown(pointer);
+                uint alpha;
+                hr = ((IDiagnosticThumbnailProvider)provider).GetThumbnail((uint)size, out bitmap, out alpha);
+            }
+            timer.Stop();
+            Console.WriteLine("Shell bind in-process: " + path + " hr=0x" + hr.ToString("X8") +
+                " ms=" + timer.ElapsedMilliseconds + " bitmap=" + (bitmap != IntPtr.Zero));
+            return hr >= 0 && bitmap != IntPtr.Zero;
+        } catch (Exception ex) {
+            Console.WriteLine("Shell bind in-process: " + path + " FAILED " + ex.Message +
+                " (0x" + ex.HResult.ToString("X8") + ")");
+            return false;
+        } finally {
+            if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
+            if (pointer != IntPtr.Zero) Marshal.Release(pointer);
+            if (provider != null) Marshal.ReleaseComObject(provider);
+            if (item != null) Marshal.ReleaseComObject(item);
         }
     }
 
@@ -201,6 +241,7 @@ foreach ($sample in $samples) {
         }
     }
     if (![DiagnosticShellThumbnail]::CheckProvider($path, $Size)) { $failed = $true }
+    if (![DiagnosticShellThumbnail]::CheckInProcessShellBinding($path, $Size)) { $failed = $true }
     if (![DiagnosticShellThumbnail]::Check($path, $Size)) { $failed = $true }
 }
 if ($failed) { exit 1 }
