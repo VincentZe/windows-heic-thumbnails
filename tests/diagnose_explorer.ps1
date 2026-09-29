@@ -76,6 +76,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+using System.Text;
 
 [StructLayout(LayoutKind.Sequential)] public struct DiagnosticThumbSize {
     public int Width, Height;
@@ -94,12 +95,26 @@ public interface IDiagnosticThumbnailProvider {
     [PreserveSig] int GetThumbnail(uint size, out IntPtr bitmap, out uint alpha);
 }
 public static class DiagnosticShellThumbnail {
+    [DllImport("shlwapi.dll", CharSet=CharSet.Unicode)]
+    static extern int AssocQueryString(int flags, int str, string association, string extra,
+        StringBuilder result, ref uint length);
     [DllImport("shell32.dll", CharSet=CharSet.Unicode, PreserveSig=false)]
     static extern void SHCreateItemFromParsingName(string path, IntPtr bind, ref Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out IDiagnosticShellItemImageFactory factory);
     [DllImport("shlwapi.dll", CharSet=CharSet.Unicode, PreserveSig=false)]
     static extern void SHCreateStreamOnFileW(string path, uint mode, out IStream stream);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr bitmap);
+
+    public static string QueryHandler(string extension) {
+        const string thumbnailSlot = "{e357fccd-a995-4576-b01f-234630154e96}";
+        var result = new StringBuilder(256);
+        uint length = (uint)result.Capacity;
+        // ASSOCSTR_SHELLEXTENSION asks Windows to resolve the handler, including ProgID precedence.
+        int hr = AssocQueryString(0, 16, extension, thumbnailSlot, result, ref length);
+        Console.WriteLine("AssocQueryString(" + extension + ") hr=0x" + hr.ToString("X8") +
+            " CLSID=" + (hr >= 0 ? result.ToString() : "<unresolved>"));
+        return hr >= 0 ? result.ToString() : null;
+    }
 
     public static bool CheckProvider(string path, int size) {
         var timer = Stopwatch.StartNew();
@@ -171,6 +186,13 @@ foreach ($sample in $samples) {
     foreach ($hive in @($user, $machine, $classes)) {
         $prefix = if ($hive -eq $classes) { '' } else { 'Software\Classes\' }
         Write-ClassValue "$hive $extension thumbnail handler" $hive "$prefix$extension\$thumbnailSlot"
+    }
+    $effectiveHandler = [DiagnosticShellThumbnail]::QueryHandler($extension)
+    $userHandler = Get-ClassValue $user "Software\Classes\$extension\$thumbnailSlot"
+    $machineHandler = Get-ClassValue $machine "Software\Classes\$extension\$thumbnailSlot"
+    foreach ($candidate in @($effectiveHandler, $userHandler, $machineHandler) |
+        Where-Object { $_ -and $_ -notlike '<*' } | Select-Object -Unique) {
+        Write-ClassValue "Candidate $candidate InprocServer32" $classes "CLSID\$candidate\InprocServer32"
     }
     foreach ($progId in @($userChoice, $extensionProgId) | Where-Object { $_ -and $_ -notlike '<*' } | Select-Object -Unique) {
         foreach ($hive in @($user, $machine, $classes)) {
