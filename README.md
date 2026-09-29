@@ -19,7 +19,7 @@ To open or edit HEIC files you'll still need another application such as [Paint.
 - Requires 64-bit Windows 10/11
 - Install the latest [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe), if required. You may already have this installed, but if you get an error when you run the `regsvr32` command, install this and then try again.
 
-On the build PC, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\package.ps1` after building x64 Release. The ZIP under `artifacts\` contains the handler, all three native dependencies, licenses, and an installer. Copy the ZIP to a 64-bit Windows 10/11 PC, extract it, then run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` inside the extracted folder. The target PC does not need vcpkg, Visual Studio, or admin rights; it needs the x64 Visual C++ runtime linked above.
+On the build PC, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\package.ps1`. Packaging forces a clean x64 Release rebuild and verifies `QueryInterface` for both shell interfaces before and after copying the DLL. The ZIP under `artifacts\` contains the handler, all three native dependencies, licenses, an installer, `BUILDINFO.txt` with the DLL SHA256, and `verify-com.ps1`. Copy the ZIP to a 64-bit Windows 10/11 PC, extract it, then run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` inside the extracted folder. The target PC does not need vcpkg, Visual Studio, or admin rights; it needs the x64 Visual C++ runtime linked above.
 
 For installing directly from a source checkout on the build PC, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1`. This mode finds vcpkg on PATH or via `VCPKG_ROOT` / `-VcpkgRoot`. Both modes copy the DLLs into `%LOCALAPPDATA%\FastImageThumbnails`, register them for the current user, and save the previous handlers for each extension.
 
@@ -41,7 +41,7 @@ Requires [libheif](https://github.com/strukturag/libheif) which can be installed
 
 Build `src\HEICThumbnailHandler.vcxproj` as `Release|x64` with MSBuild, passing `/p:VcpkgRoot=C:\path\to\vcpkg\` unless you already enabled vcpkg's Visual Studio integration. The project uses C++17 and links `heif.lib` from `installed\x64-windows` when `VcpkgRoot` is set.
 
-Use `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\benchmark.ps1 -SampleDirectory C:\path\to\samples` to benchmark the DLL without installing it. After installation, `tests\explorer_benchmark.ps1` exercises Windows' `IShellItemImageFactory` path. Both commands fail when a sample thumbnail cannot be generated.
+Use `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\com_interfaces.ps1` to verify the built DLL's COM interfaces, or `verify-com.ps1` in the extracted ZIP to verify the delivered DLL on another machine. `tests\benchmark.ps1 -SampleDirectory C:\path\to\samples` benchmarks the DLL without installing it. After installation, `tests\explorer_benchmark.ps1` exercises Windows' `IShellItemImageFactory` path. Both thumbnail commands fail when a sample cannot be generated.
 
 The original vcpkg overlay can optionally remove the unused x265 encoder dependency if rebuilt against a compatible libheif version; the package script currently includes `libx265.dll` as required by the stock vcpkg build.
 

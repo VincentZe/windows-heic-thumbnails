@@ -10,6 +10,15 @@
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "Pathcch.lib")
 
+namespace {
+// Pin the two shell interfaces to their published IIDs instead of relying on
+// an SDK uuid.lib symbol selected by the linker.
+constexpr GUID kInitializeWithStream = { 0xb824b49d, 0x22ac, 0x4161,
+    { 0xac, 0x8a, 0x99, 0x16, 0xe8, 0xfa, 0x3f, 0x7f } };
+constexpr GUID kThumbnailProvider = { 0xe357fccd, 0xa995, 0x4576,
+    { 0xb0, 0x1f, 0x23, 0x46, 0x30, 0x15, 0x4e, 0x96 } };
+}
+
 // this thumbnail provider implements IInitializeWithStream to enable being hosted
 // in an isolated process for robustness
 
@@ -33,13 +42,16 @@ public:
     // IUnknown
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv)
     {
-        static const QITAB qit[] =
-        {
-            QITABENT(CHEICThumbProvider, IInitializeWithStream),
-            QITABENT(CHEICThumbProvider, IThumbnailProvider),
-            { 0 },
-        };
-        return QISearch(this, qit, riid, ppv);
+        if (!ppv) return E_POINTER;
+        *ppv = nullptr;
+        if (IsEqualGUID(riid, __uuidof(IUnknown)) || IsEqualGUID(riid, kInitializeWithStream))
+            *ppv = static_cast<IInitializeWithStream*>(this);
+        else if (IsEqualGUID(riid, kThumbnailProvider))
+            *ppv = static_cast<IThumbnailProvider*>(this);
+        else
+            return E_NOINTERFACE;
+        AddRef();
+        return S_OK;
     }
 
     IFACEMETHODIMP_(ULONG) AddRef()

@@ -38,6 +38,12 @@ $files = @(
 foreach ($file in $files) {
     if (!(Test-Path -LiteralPath $file.Source)) { throw "Missing dependency: $($file.Source)" }
 }
+if ($isPortable) {
+    $check = Join-Path $PSScriptRoot 'verify-com.ps1'
+    if (!(Test-Path -LiteralPath $check)) { throw "Missing COM interface check: $check" }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $check -DllPath $source -DependencyDirectory $bin
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged DLL failed COM interface verification. Installation was not changed.' }
+}
 
 # The server is installed outside the build directory so rebuilds do not replace a loaded DLL.
 New-Item -ItemType Directory -Path $Destination -Force | Out-Null
