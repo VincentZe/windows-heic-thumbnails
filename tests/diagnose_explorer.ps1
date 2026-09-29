@@ -55,15 +55,6 @@ if ($registeredDll -notlike '<*' -and (Test-Path -LiteralPath $registeredDll -Pa
     Write-Output 'Effective DLL is missing or unregistered.'
 }
 
-try {
-    $instance = [Activator]::CreateInstance([type]::GetTypeFromCLSID([guid]$clsid, $true))
-    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($instance)
-    Write-Output 'Registered COM activation: OK'
-} catch {
-    Write-Output ('Registered COM activation: FAILED {0} (0x{1:X8})' -f $_.Exception.Message, $_.Exception.HResult)
-    $failed = $true
-}
-
 $samples = @($SamplePath)
 if ($SampleDirectory) {
     $samples += @(Get-ChildItem -LiteralPath $SampleDirectory -File |
@@ -99,6 +90,19 @@ public interface IDiagnosticThumbnailProvider {
     [PreserveSig] int GetThumbnail(uint size, out IntPtr bitmap, out uint alpha);
 }
 public static class DiagnosticShellThumbnail {
+    public static void ReportModules(string stage) {
+        foreach (string name in new[] { "HEICThumbnailHandler.dll", "sagethumbs2k.dll" }) {
+            string location = "<not loaded>";
+            foreach (ProcessModule module in Process.GetCurrentProcess().Modules) {
+                if (string.Equals(module.ModuleName, name, StringComparison.OrdinalIgnoreCase)) {
+                    location = module.FileName;
+                    break;
+                }
+            }
+            Console.WriteLine("Module " + stage + " " + name + ": " + location);
+        }
+    }
+
     [DllImport("shlwapi.dll", CharSet=CharSet.Unicode)]
     static extern int AssocQueryString(int flags, int str, string association, string extra,
         StringBuilder result, ref uint length);
@@ -266,9 +270,21 @@ foreach ($sample in $samples) {
             Write-ClassValue "$hive $progId thumbnail handler" $hive "$prefix$progId\$thumbnailSlot"
         }
     }
-    if (![DiagnosticShellThumbnail]::CheckProvider($path, $Size)) { $failed = $true }
+    [DiagnosticShellThumbnail]::ReportModules('before Shell')
     if (![DiagnosticShellThumbnail]::CheckShellStream($path)) { $failed = $true }
+    [DiagnosticShellThumbnail]::ReportModules('after stream')
     if (![DiagnosticShellThumbnail]::CheckInProcessShellBinding($path, $Size)) { $failed = $true }
+    [DiagnosticShellThumbnail]::ReportModules('after thumbnail bind')
     if (![DiagnosticShellThumbnail]::Check($path, $Size)) { $failed = $true }
+    [DiagnosticShellThumbnail]::ReportModules('after Shell image')
+    if (![DiagnosticShellThumbnail]::CheckProvider($path, $Size)) { $failed = $true }
+}
+try {
+    $instance = [Activator]::CreateInstance([type]::GetTypeFromCLSID([guid]$clsid, $true))
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($instance)
+    Write-Output 'Registered COM activation: OK'
+} catch {
+    Write-Output ('Registered COM activation: FAILED {0} (0x{1:X8})' -f $_.Exception.Message, $_.Exception.HResult)
+    $failed = $true
 }
 if ($failed) { exit 1 }

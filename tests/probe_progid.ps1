@@ -46,7 +46,7 @@ function Invoke-ShellProbe([string]$Label) {
     $lines = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $diagnostic -SamplePath $path 2>&1
     $status = $LASTEXITCODE
     foreach ($line in $lines) {
-        if ([string]$line -match 'AssocQueryString\(|Direct provider:|Shell stream binding:|Shell bind in-process:|Shell thumbnail:|Sample missing:') {
+        if ([string]$line -match 'AssocQueryString\(|Direct provider:|Shell stream binding:|Shell bind in-process:|Shell thumbnail:|Module (before Shell|after stream|after thumbnail bind|after Shell image)|Sample missing:') {
             Write-Host $line
         }
     }
