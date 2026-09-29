@@ -47,6 +47,7 @@ $files = @(
     @{ Source = (Join-Path $PSScriptRoot 'DEPLOY.txt'); Name = 'DEPLOY.txt' },
     @{ Source = (Join-Path $PSScriptRoot '..\tests\com_interfaces.ps1'); Name = 'verify-com.ps1' },
     @{ Source = (Join-Path $PSScriptRoot '..\tests\diagnose_explorer.ps1'); Name = 'diagnose-explorer.ps1' },
+    @{ Source = (Join-Path $PSScriptRoot '..\tests\probe_progid.ps1'); Name = 'probe-progid.ps1' },
     @{ Source = (Join-Path $PSScriptRoot '..\LICENSE'); Name = 'LICENSE.txt' }
 )
 foreach ($file in $files) {

@@ -18,6 +18,13 @@ registered provider directly, checks Shell stream and thumbnail binding, then as
 for a thumbnail without an icon fallback. Share diagnosis.txt after
 redacting local user names and file paths if needed. This check is read-only.
 
+For a controlled ProgID precedence test, probe-progid.ps1 temporarily adds the
+current user's thumbnail handler to the file's ProgID, checks before/during/after
+in fresh processes, then restores the exact prior default value (if any):
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\probe-progid.ps1 -SamplePath 'C:\path\to\photo.heic'
+It does not change the default application. Unlike diagnose-explorer.ps1, this
+probe briefly changes an HKCU thumbnail registration. Do not terminate it early.
+
 This installs for the current Windows user only; administrator access, Visual Studio
 and vcpkg are not needed. Requires the Microsoft Visual C++ 2015-2022 x64 runtime:
 https://aka.ms/vs/17/release/vc_redist.x64.exe
