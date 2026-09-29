@@ -123,6 +123,30 @@ public static class DiagnosticShellThumbnail {
         return hr >= 0 ? result.ToString() : null;
     }
 
+    public static bool CheckShellStream(string path) {
+        var timer = Stopwatch.StartNew();
+        IDiagnosticShellItem item = null;
+        IntPtr pointer = IntPtr.Zero;
+        try {
+            var itemId = typeof(IDiagnosticShellItem).GUID;
+            CreateShellItem(path, IntPtr.Zero, ref itemId, out item);
+            var streamHandler = new Guid("1cebb3ab-7c10-499a-a417-92ca16c4cb83"); // BHID_Stream
+            var streamId = new Guid("0000000c-0000-0000-c000-000000000046");
+            int hr = item.BindToHandler(IntPtr.Zero, ref streamHandler, ref streamId, out pointer);
+            timer.Stop();
+            Console.WriteLine("Shell stream binding: " + path + " hr=0x" + hr.ToString("X8") +
+                " ms=" + timer.ElapsedMilliseconds + " stream=" + (pointer != IntPtr.Zero));
+            return hr >= 0 && pointer != IntPtr.Zero;
+        } catch (Exception ex) {
+            Console.WriteLine("Shell stream binding: " + path + " FAILED " + ex.Message +
+                " (0x" + ex.HResult.ToString("X8") + ")");
+            return false;
+        } finally {
+            if (pointer != IntPtr.Zero) Marshal.Release(pointer);
+            if (item != null) Marshal.ReleaseComObject(item);
+        }
+    }
+
     public static bool CheckProvider(string path, int size) {
         var timer = Stopwatch.StartNew();
         object instance = null;
@@ -228,19 +252,22 @@ foreach ($sample in $samples) {
         Write-ClassValue "$hive $extension thumbnail handler" $hive "$prefix$extension\$thumbnailSlot"
     }
     $effectiveHandler = [DiagnosticShellThumbnail]::QueryHandler($extension)
+    $fileHandler = [DiagnosticShellThumbnail]::QueryHandler($path)
     $userHandler = Get-ClassValue $user "Software\Classes\$extension\$thumbnailSlot"
     $machineHandler = Get-ClassValue $machine "Software\Classes\$extension\$thumbnailSlot"
-    foreach ($candidate in @($effectiveHandler, $userHandler, $machineHandler) |
+    foreach ($candidate in @($effectiveHandler, $fileHandler, $userHandler, $machineHandler) |
         Where-Object { $_ -and $_ -notlike '<*' } | Select-Object -Unique) {
         Write-ClassValue "Candidate $candidate InprocServer32" $classes "CLSID\$candidate\InprocServer32"
     }
     foreach ($progId in @($userChoice, $extensionProgId) | Where-Object { $_ -and $_ -notlike '<*' } | Select-Object -Unique) {
+        [void][DiagnosticShellThumbnail]::QueryHandler($progId)
         foreach ($hive in @($user, $machine, $classes)) {
             $prefix = if ($hive -eq $classes) { '' } else { 'Software\Classes\' }
             Write-ClassValue "$hive $progId thumbnail handler" $hive "$prefix$progId\$thumbnailSlot"
         }
     }
     if (![DiagnosticShellThumbnail]::CheckProvider($path, $Size)) { $failed = $true }
+    if (![DiagnosticShellThumbnail]::CheckShellStream($path)) { $failed = $true }
     if (![DiagnosticShellThumbnail]::CheckInProcessShellBinding($path, $Size)) { $failed = $true }
     if (![DiagnosticShellThumbnail]::Check($path, $Size)) { $failed = $true }
 }

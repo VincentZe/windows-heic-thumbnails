@@ -14,7 +14,7 @@ If Explorer still shows generic icons, run this in the extracted folder with
 the path of a real HEIC or DNG that fails in Explorer (no admin rights needed):
    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\diagnose-explorer.ps1 -SamplePath 'C:\path\to\photo.heic' *> diagnosis.txt
 The report shows the current user's effective file associations, tests the
-registered provider directly, tests Shell binding in-process, then asks Windows
+registered provider directly, checks Shell stream and thumbnail binding, then asks Windows
 for a thumbnail without an icon fallback. Share diagnosis.txt after
 redacting local user names and file paths if needed. This check is read-only.
 
