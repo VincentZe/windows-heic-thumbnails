@@ -3,6 +3,7 @@
 #include <thumbcache.h> // For IThumbnailProvider.
 #include <shlobj.h>     // For SHChangeNotify
 #include <new>
+#include <strsafe.h>
 
 #include "log.h"
 
@@ -40,8 +41,6 @@ STDAPI_(BOOL) DllMain(HINSTANCE hInstance, DWORD dwReason, void*)
         g_hInst = hInstance;
         DisableThreadLibraryCalls(hInstance);
 
-        Log_Open(L"HEICThumbProvider");
-
         DWORD dwLevel = LOG_NONE;
 
         HKEY hk = 0;
@@ -63,6 +62,8 @@ STDAPI_(BOOL) DllMain(HINSTANCE hInstance, DWORD dwReason, void*)
                     dwLevel < LOG_MAX)
                 {
                     Log_SetLevel((LOG_LEVEL)dwLevel);
+                    if (dwLevel != LOG_NONE)
+                        Log_Open(L"HEICThumbProvider");
                 }
             }
 
@@ -210,6 +211,75 @@ HRESULT CreateRegKeyAndSetValue(const REGISTRY_ENTRY* pRegistryEntry)
     return hr;
 }
 
+const PCWSTR thumbnailTypes[] = { L".heic", L".heif", L".dng" };
+const PCWSTR previousValues[] = { L"PreviousHeic", L"PreviousHeif", L"PreviousDng" };
+
+void ThumbnailKey(PCWSTR type, WCHAR* path, size_t capacity)
+{
+    StringCchPrintfW(path, capacity, L"Software\\Classes\\%s\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}", type);
+}
+
+HRESULT RegisterThumbnailType(size_t index)
+{
+    WCHAR path[160] = {};
+    ThumbnailKey(thumbnailTypes[index], path, ARRAYSIZE(path));
+    WCHAR effectivePath[160] = {};
+    StringCchPrintfW(effectivePath, ARRAYSIZE(effectivePath),
+        L"%s\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}", thumbnailTypes[index]);
+    WCHAR previous[64] = {};
+    DWORD bytes = sizeof(previous);
+    HKEY existing = nullptr;
+    if (RegOpenKeyExW(HKEY_CLASSES_ROOT, effectivePath, 0, KEY_QUERY_VALUE, &existing) == ERROR_SUCCESS)
+    {
+        DWORD type = 0;
+        if (RegQueryValueExW(existing, nullptr, nullptr, &type, reinterpret_cast<BYTE*>(previous), &bytes) != ERROR_SUCCESS ||
+            type != REG_SZ || bytes > sizeof(previous)) previous[0] = 0;
+        RegCloseKey(existing);
+    }
+    if (wcscmp(previous, SZ_CLSID_HEICTHUMBHANDLER) != 0)
+    {
+        const REGISTRY_ENTRY backup = { HKEY_CURRENT_USER,
+            L"Software\\Classes\\CLSID\\" SZ_CLSID_HEICTHUMBHANDLER, previousValues[index], previous };
+        HRESULT hr = CreateRegKeyAndSetValue(&backup);
+        if (FAILED(hr)) return hr;
+    }
+    const REGISTRY_ENTRY association = { HKEY_CURRENT_USER, path, nullptr, SZ_CLSID_HEICTHUMBHANDLER };
+    return CreateRegKeyAndSetValue(&association);
+}
+
+HRESULT UnregisterThumbnailType(size_t index)
+{
+    WCHAR path[160] = {};
+    ThumbnailKey(thumbnailTypes[index], path, ARRAYSIZE(path));
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, path, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &key) != ERROR_SUCCESS)
+        return S_OK;
+    WCHAR current[64] = {};
+    DWORD bytes = sizeof(current), type = 0;
+    LONG status = RegQueryValueExW(key, nullptr, nullptr, &type, reinterpret_cast<BYTE*>(current), &bytes);
+    if (status != ERROR_SUCCESS || type != REG_SZ || wcscmp(current, SZ_CLSID_HEICTHUMBHANDLER) != 0)
+    {
+        RegCloseKey(key);
+        return S_OK;
+    }
+    WCHAR previous[64] = {};
+    bytes = sizeof(previous);
+    HKEY handler = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\CLSID\\" SZ_CLSID_HEICTHUMBHANDLER,
+        0, KEY_QUERY_VALUE, &handler) == ERROR_SUCCESS)
+    {
+        if (RegQueryValueExW(handler, previousValues[index], nullptr, &type,
+            reinterpret_cast<BYTE*>(previous), &bytes) != ERROR_SUCCESS || type != REG_SZ || bytes > sizeof(previous))
+            previous[0] = 0;
+        RegCloseKey(handler);
+    }
+    status = previous[0] ? RegSetValueExW(key, nullptr, 0, REG_SZ,
+        reinterpret_cast<const BYTE*>(previous), static_cast<DWORD>((wcslen(previous) + 1) * sizeof(WCHAR))) :
+        RegDeleteValueW(key, nullptr);
+    RegCloseKey(key);
+    return status == ERROR_FILE_NOT_FOUND ? S_OK : HRESULT_FROM_WIN32(status);
+}
+
 //
 // Registers this COM server
 //
@@ -232,8 +302,6 @@ STDAPI DllRegisterServer()
             {HKEY_CURRENT_USER,   L"Software\\Classes\\CLSID\\" SZ_CLSID_HEICTHUMBHANDLER,                                 NULL,                           SZ_HEICTHUMBHANDLER},
             {HKEY_CURRENT_USER,   L"Software\\Classes\\CLSID\\" SZ_CLSID_HEICTHUMBHANDLER L"\\InProcServer32",             NULL,                           szModuleName},
             {HKEY_CURRENT_USER,   L"Software\\Classes\\CLSID\\" SZ_CLSID_HEICTHUMBHANDLER L"\\InProcServer32",             L"ThreadingModel",              L"Apartment"},
-            {HKEY_CURRENT_USER,   L"Software\\Classes\\.heic\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}",            NULL,                           SZ_CLSID_HEICTHUMBHANDLER},
-            {HKEY_CURRENT_USER,   L"Software\\Classes\\.heif\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}",            NULL,                           SZ_CLSID_HEICTHUMBHANDLER},
         };
 
         hr = S_OK;
@@ -241,6 +309,8 @@ STDAPI DllRegisterServer()
         {
             hr = CreateRegKeyAndSetValue(&rgRegistryEntries[i]);
         }
+        for (size_t i = 0; i < ARRAYSIZE(thumbnailTypes) && SUCCEEDED(hr); ++i)
+            hr = RegisterThumbnailType(i);
     }
     if (SUCCEEDED(hr))
     {
@@ -258,22 +328,14 @@ STDAPI DllUnregisterServer()
 {
     HRESULT hr = S_OK;
 
-    const PCWSTR rgpszKeys[] =
+    for (size_t i = 0; i < ARRAYSIZE(thumbnailTypes) && SUCCEEDED(hr); ++i)
+        hr = UnregisterThumbnailType(i);
+    if (SUCCEEDED(hr))
     {
-        L"Software\\Classes\\CLSID\\" SZ_CLSID_HEICTHUMBHANDLER,
-        L"Software\\Classes\\.heic\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}"
-        L"Software\\Classes\\.heif\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}"
-    };
-
-    // Delete the registry entries
-    for (int i = 0; i < ARRAYSIZE(rgpszKeys) && SUCCEEDED(hr); i++)
-    {
-        hr = HRESULT_FROM_WIN32(RegDeleteTreeW(HKEY_CURRENT_USER, rgpszKeys[i]));
-        if (hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
-        {
-            // If the registry entry has already been deleted, say S_OK.
-            hr = S_OK;
-        }
+        hr = HRESULT_FROM_WIN32(RegDeleteTreeW(HKEY_CURRENT_USER,
+            L"Software\\Classes\\CLSID\\" SZ_CLSID_HEICTHUMBHANDLER));
+        if (hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) hr = S_OK;
     }
+    if (SUCCEEDED(hr)) SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     return hr;
 }

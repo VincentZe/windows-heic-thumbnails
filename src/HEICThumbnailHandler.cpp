@@ -5,6 +5,7 @@
 #include <libheif/heif.h>
 
 #include "log.h"
+#include "fast_thumbnail.h"
 
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "Pathcch.lib")
@@ -145,6 +146,13 @@ HRESULT CreateDIBFromData(HBITMAP* phbmp, WTS_ALPHATYPE* pdwAlpha, const uint8_t
 // IThumbnailProvider
 IFACEMETHODIMP CHEICThumbProvider::GetThumbnail(UINT requested_size, HBITMAP* phbmp, WTS_ALPHATYPE* pdwAlpha)
 {
+    if (!phbmp || !pdwAlpha || !_pStream) return E_INVALIDARG;
+    *phbmp = nullptr;
+    bool isDng = false;
+    HRESULT fastResult = CreateFastThumbnail(_pStream, requested_size, phbmp, pdwAlpha, &isDng);
+    if (fastResult == S_OK) return S_OK;
+    if (isDng) return fastResult == S_FALSE ? E_FAIL : fastResult;
+
     Log_WriteFmt(LOG_INFO, L"BEGIN Requested thumbnail size: %u x %u", requested_size, requested_size);
 
     ULARGE_INTEGER ulSize;
@@ -162,8 +170,12 @@ IFACEMETHODIMP CHEICThumbProvider::GetThumbnail(UINT requested_size, HBITMAP* ph
     {
         Log_WriteFmt(LOG_DEBUG, L"Stream size {%u, %u}", ulSize.HighPart, ulSize.LowPart);
 
-        if (ulSize.HighPart == 0)
+        // A HEIC without a preview should not force an unbounded decode in Explorer.
+        if (ulSize.HighPart == 0 && ulSize.LowPart <= 64 * 1024 * 1024)
         {
+            LARGE_INTEGER start = {};
+            hr = _pStream->Seek(start, STREAM_SEEK_SET, nullptr);
+            if (FAILED(hr)) return hr;
             void* ptr = LocalAlloc(LPTR, ulSize.LowPart);
             if (!ptr)
             {
@@ -173,7 +185,7 @@ IFACEMETHODIMP CHEICThumbProvider::GetThumbnail(UINT requested_size, HBITMAP* ph
             {
                 ULONG ulRead = 0;
                 hr = _pStream->Read(ptr, ulSize.LowPart, &ulRead);
-                if (FAILED(hr))
+                if (FAILED(hr) || ulRead != ulSize.LowPart)
                 {
                     Log_WriteFmt(LOG_ERROR, L"Could not read image stream, IStream::Read(%u) failed: 0x%08x", ulSize.LowPart, hr);
                 }
@@ -231,6 +243,12 @@ IFACEMETHODIMP CHEICThumbProvider::GetThumbnail(UINT requested_size, HBITMAP* ph
                         else
                         {
                             Log_Write(LOG_INFO, L"File does not contain thumbnail, decoding full image.");
+                            if (static_cast<uint64_t>(input_width) * input_height > 32ull * 1024 * 1024)
+                            {
+                                heif_image_handle_release(image_handle);
+                                image_handle = nullptr;
+                                Log_Write(LOG_WARNING, L"Skipping oversized HEIC without embedded preview.");
+                            }
                         }
                     }
 

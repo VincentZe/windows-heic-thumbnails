@@ -15,11 +15,17 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="fast_thumbnail.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="log.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="fast_thumbnail.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

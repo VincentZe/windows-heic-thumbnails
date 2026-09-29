@@ -70,6 +70,10 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(VcpkgRoot)' != '' and '$(Platform)' == 'x64'">
+    <VcpkgIncludeDir>$(VcpkgRoot)installed\x64-windows\include</VcpkgIncludeDir>
+    <VcpkgLibraryDir>$(VcpkgRoot)installed\x64-windows\lib</VcpkgLibraryDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
@@ -147,16 +151,28 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="fast_thumbnail.h" />
     <ClInclude Include="log.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="fast_thumbnail.cpp" />
     <ClCompile Include="HEICThumbnailHandler.cpp" />
     <ClCompile Include="log.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="HEICThumbnailHandler.def" />
   </ItemGroup>
+  <ItemDefinitionGroup Condition="'$(VcpkgIncludeDir)' != ''">
+    <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(VcpkgIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(VcpkgLibraryDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>heif.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

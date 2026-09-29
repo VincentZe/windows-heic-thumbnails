@@ -1,28 +1,27 @@
 
-# Installing
+Build x64 Release, then create a portable ZIP on the build PC:
 
-- Requires Windows 10 (64-bit)
-- Install the latest [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe), if required. You may already have this installed, but if you get an error when you run the `regsvr32` command, install this and then try again.
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\package.ps1
 
-1. Create a folder, such as `C:\HEICThumbnailHandler\` to place the DLL files.
-2. Extract the files `HEICThumbnailHandler.dll`, `heif.dll`, and `libde265.dll` into the folder you created (`C:\HEICThumbnailHandler\`).
-3. Register the DLL:
-	- Press `Win+R`
-	- Type `cmd`
-	- Click `OK`
-	- Type `cd C:\HEICThumbnailHandler\`
-	- Type `regsvr32 HEICThumbnailHandler.dll`
+Copy the ZIP from artifacts\ to a 64-bit Windows 10/11 PC, extract it, and run:
 
-Windows Explorer should begin displaying thumbnails for `.heic` and `.heif` files.
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 
-# Uninstalling
+On the build PC, direct installation from the source checkout also works:
 
-1. Un-Register the DLL:
-	- Press `Win+R`
-	- Type `cmd`
-	- Click `OK`
-	- Type `cd C:\HEICThumbnailHandler\`
-	- Type `regsvr32 /u HEICThumbnailHandler.dll`
-2. Delete the `HEICThumbnailHandler` folder.
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1
 
-Existing thumbnails may continue to display, but new thumbnails will not be created.
+For building or packaging, vcpkg must be on PATH, VCPKG_ROOT must be set, or
+-VcpkgRoot must be supplied. The target PC does not need vcpkg or Visual Studio.
+The script installs four DLLs under %LOCALAPPDATA%\FastImageThumbnails and registers
+the thumbnail provider for .heic, .heif and .dng for the current user only.
+It remembers the previous thumbnail provider for each extension.
+
+To restore the previous thumbnail associations:
+
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
+
+Use scripts\install.ps1 -Uninstall instead when running from a source checkout.
+
+The DLL files remain in the install directory after unregistering; remove them manually
+once the shell has released the handler. Previously cached thumbnails may persist.
